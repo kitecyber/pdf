@@ -71,6 +71,7 @@ func (b *buffer) readByte() byte {
 	if b.pos >= len(b.buf) {
 		b.reload()
 		if b.pos >= len(b.buf) {
+			b.eof = true	// bugfix: '\n' has the meaning of EOF here evaluated at readToken
 			return '\n'
 		}
 	}
@@ -140,12 +141,18 @@ func (b *buffer) readToken() token {
 
 	// Find first non-space, non-comment byte.
 	c := b.readByte()
+	
+	if debug > 5 {
+		fmt.Println(".. readToken: ", b.eof, c)
+	}
+	
 	for {
-		if isSpace(c) {
+		if isSpace(c) {	
 			if b.eof {
 				return io.EOF
 			}
 			c = b.readByte()
+			
 		} else if c == '%' {
 			for c != '\r' && c != '\n' {
 				c = b.readByte()
@@ -423,13 +430,20 @@ type objdef struct {
 
 func (b *buffer) readObject() (object, error) {
 	tok := b.readToken()
+	if tok == io.EOF {	// bugfix: if reading not from beginning than we may already at the end
+		return nil, errors.New("io.EOF")
+	}
+
 	if kw, ok := tok.(keyword); ok {
+		if debug > 3 {
+			fmt.Println(".... readObject: kw = ", kw)
+		}
 		switch kw {
 		case "null":
 			return nil, nil
 		case "<<":
 			return b.readDict(), nil
-		case "[":
+		case "[":	
 			return b.readArray(), nil
 		}
 		// b.errorf("unexpected keyword %q parsing object", kw)
@@ -481,7 +495,7 @@ func (b *buffer) readArray() object {
 	var x array
 	for {
 		tok := b.readToken()
-		if tok == nil || tok == keyword("]") {
+		if tok == nil || tok == io.EOF || tok == keyword("]") {
 			break
 		}
 		b.unreadToken(tok)
@@ -498,7 +512,8 @@ func (b *buffer) readDict() object {
 	x := make(dict)
 	for {
 		tok := b.readToken()
-		if tok == nil || tok == keyword(">>") {
+		
+		if tok == nil || tok == io.EOF || tok == keyword(">>") {
 			break
 		}
 		n, ok := tok.(name)

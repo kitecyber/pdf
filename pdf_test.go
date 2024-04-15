@@ -28,6 +28,72 @@ TEST
 SUBTITLE`
 
 //
+// process file and output all
+// for debugging
+//
+func Test_selectedFile(t *testing.T) {
+	
+	testFile := "./testdatabugs/error_pdf17_endless-loop.pdf"
+	if _, err := os.Stat(testFile); err == nil {
+
+		fmt.Println(". open testFile = " + testFile)
+		f, err := Open(testFile)
+		if err != nil {
+			t.Error(err)
+		} else {
+
+			totalPage := f.NumPage()
+			fmt.Println(". totalPage = " + strconv.Itoa(totalPage))
+			
+			for pageIndex := 1; pageIndex <= totalPage; pageIndex++ {
+				fmt.Println(". pageIndex = "  + strconv.Itoa(pageIndex))
+				var buf bytes.Buffer
+
+				p := f.Page(pageIndex)
+				if p.V.IsNull() {
+					continue
+				}
+				
+				texts := p.Content().Text
+				var lastY = 0.0
+				line := ""
+
+				for _, text := range texts {
+					if lastY != text.Y {
+						if lastY > 0 {
+							buf.WriteString(line + "\n")
+							line = text.S
+						} else {
+							line += text.S
+						}
+					} else {
+						line += text.S
+					}
+
+					lastY = text.Y
+				}
+				buf.WriteString(line)
+				fmt.Println(". buf.Len() = " + strconv.Itoa(buf.Len()))
+				fmt.Println(buf.String())
+				
+			}
+			
+			// version
+			fmt.Println(". version = " + f.Version())
+		
+			// verdicts
+			verdicts = f.Verdicts()
+			fmt.Println(". verdicts = " + strconv.Itoa(len(verdicts)))
+			for i:=0; i< len(verdicts); i++ {
+				fmt.Println(verdicts[i])
+			}
+			
+			// close
+			f.Close()
+		}
+	}
+}
+//
 // this pdf has an object within stream which is handled different!
 // the original implementation calculated the stream but didn't returned the object at resolve
 //
@@ -125,6 +191,101 @@ func Test_ReadPdf_v17_MinSizeNoPDFA_2trailer(t *testing.T) {
 	}
 }
 //
+// process all pdfs within ./testdata/*.pdf and write content to *.txt
+//
+func Test_WalkDirectory_ReadPdfs(t *testing.T) {
+	
+	// get files
+	var startPath string = "./testdata"
+	files, err := walkDir(startPath, ".pdf")
+	if err != nil {
+        t.Error("Assert: " + err.Error())
+    }
+	
+	// read files
+	for i:=0; i<len(files); i++ {
+		
+		testFile := files[i]
+		if !strings.HasSuffix(testFile, ".pdf") {
+			continue
+		}
+		
+		fmt.Println(". open testFile = ", testFile)
+		f, err := Open(testFile)
+		if err != nil {
+			t.Error(err)
+		} else {
+
+			totalPage := f.NumPage()
+			fmt.Println(". totalPage = ", totalPage)
+			
+			var buf bytes.Buffer
+
+			for pageIndex := 1; pageIndex <= totalPage; pageIndex++ {
+			
+				p := f.Page(pageIndex)
+				if p.V.IsNull() {
+					continue
+				}
+				
+				texts := p.Content().Text
+				var lastY = 0.0
+				line := ""
+
+				for _, text := range texts {
+					if lastY != text.Y {
+						if lastY > 0 {
+							buf.WriteString(line + "\n")
+							line = text.S
+						} else {
+							line += text.S
+						}
+					} else {
+						line += text.S
+					}
+
+					lastY = text.Y
+				}
+				buf.WriteString(line)
+			}
+		
+			//
+			//fmt.Println(buf.String())
+			f.Close()
+		
+			//
+			// write bytes buffer to txt-file
+			writeToFileName := strings.Replace(testFile, ".pdf", ".txt", -1)
+			fmt.Println(".. writeToFileName = ", writeToFileName)
+			
+			fw, err := os.Create(writeToFileName)
+			if err != nil {
+				t.Error(err)
+			}
+			_, err = fw.WriteString(buf.String())
+			if err != nil {
+				t.Error(err)
+			}
+			
+			fw.Close()
+		}
+	}
+}
+//
+// walk indicated directory and 
+// return all file.names with indicated suffix
+//
+func walkDir(root, fileSuffix string) ([]string, error) {
+    var files []string
+    err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+        if !info.IsDir() && strings.HasSuffix(path, fileSuffix) {
+            files = append(files, path)
+        }
+        return nil
+    })
+    return files, err
+}
+//
 // read pdf and return content of first page for quick check
 //
 func readPdfAndGetFirstPageAsText(fileName string) (totalPages int, content string) {
@@ -164,98 +325,8 @@ func readPdfAndGetFirstPageAsText(fileName string) (totalPages int, content stri
 		content = strings.TrimSpace(buf.String())
 	}
 	
-	return totalPages, content
-}
-//
-// process all pdfs within ./testdata/*.pdf and write content to *.txt
-//
-func Test_WalkDirectory_ReadPdfs(t *testing.T) {
-	
-	// get files
-	var startPath string = "./testdata"
-	files, err := walkDir(startPath, ".pdf")
-	if err != nil {
-        t.Error("Assert: " + err.Error())
-    }
-	
-	// read files
-	for i:=0; i<len(files); i++ {
-		
-		testFile := files[i]
-		if !strings.HasSuffix(testFile, ".pdf") {
-			continue
-		}
-		
-fmt.Println(". open testFile = ", testFile)
-		f, err := Open(testFile)
-		if err != nil {
-			t.Error(err)
-		}
-
-		totalPage := f.NumPage()
-fmt.Println(". totalPage = ", totalPage)
-		
-		var buf bytes.Buffer
-
-		for pageIndex := 1; pageIndex <= totalPage; pageIndex++ {
-		
-			p := f.Page(pageIndex)
-			if p.V.IsNull() {
-				continue
-			}
+	// close
+	f.Close()
 			
-			texts := p.Content().Text
-			var lastY = 0.0
-			line := ""
-
-			for _, text := range texts {
-				if lastY != text.Y {
-					if lastY > 0 {
-						buf.WriteString(line + "\n")
-						line = text.S
-					} else {
-						line += text.S
-					}
-				} else {
-					line += text.S
-				}
-
-				lastY = text.Y
-			}
-			buf.WriteString(line)
-		}
-		
-		//
-		//fmt.Println(buf.String())
-		
-		//
-		// write bytes buffer to txt-file
-		writeToFileName := strings.Replace(testFile, ".pdf", ".txt", -1)
-		fmt.Println(".. writeToFileName = ", writeToFileName)
-		
-		fw, err := os.Create(writeToFileName)
-		if err != nil {
-			t.Error(err)
-		}
-		_, err = fw.WriteString(buf.String())
-		if err != nil {
-			t.Error(err)
-		}
-		
-		fw.Close()
-	}
-}
-//
-// walk indicated directory and 
-// return all file.names with indicated suffix
-//
-func walkDir(root, fileSuffix string) ([]string, error) {
-    var files []string
-    err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-        if !info.IsDir() && strings.HasSuffix(path, fileSuffix) {
-            files = append(files, path)
-        }
-        return nil
-    })
-    return files, err
+	return totalPages, content
 }

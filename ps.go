@@ -63,10 +63,16 @@ func Interpret(strm Value, do func(stk *Stack, op string)) {
 Reading:
 	for {
 		tok := b.readToken()
+		
+		if debug > 2 {
+			fmt.Println("... Interpret: tok = ", tok)
+		}
+		
 		if tok == io.EOF {
 			break
-		}
+		}		
 		if kw, ok := tok.(keyword); ok {
+
 			switch kw {
 			case "null", "[", "]", "<<", ">>":
 				break
@@ -85,39 +91,46 @@ Reading:
 				continue
 			case "currentdict":
 				if len(dicts) == 0 {
-					panic("no current dictionary")
+					verdicts = append(verdicts, "no current dictionary")
+				} else {
+					stk.Push(Value{nil, objptr{}, dicts[len(dicts)-1]})
 				}
-				stk.Push(Value{nil, objptr{}, dicts[len(dicts)-1]})
 				continue
 			case "begin":
 				d := stk.Pop()
 				if d.Kind() != Dict {
-					panic("cannot begin non-dict")
+					verdicts = append(verdicts, "cannot begin non-dict")
+				} else {
+					dicts = append(dicts, d.data.(dict))
 				}
-				dicts = append(dicts, d.data.(dict))
 				continue
 			case "end":
 				if len(dicts) <= 0 {
-					panic("mismatched begin/end")
+					verdicts = append(verdicts, "mismatched begin/end")
+				} else {
+					dicts = dicts[:len(dicts)-1]
 				}
-				dicts = dicts[:len(dicts)-1]
 				continue
 			case "def":
 				if len(dicts) <= 0 {
-					panic("def without open dict")
+					verdicts = append(verdicts, "def without open dict")
+				} else {
+					val := stk.Pop()
+					key, ok := stk.Pop().data.(name)
+					if !ok {
+						vpanic := "def of non-name for value=" + fmt.Sprint(val)
+						verdicts = append(verdicts, vpanic)
+					} else {
+						dicts[len(dicts)-1][key] = val.data
+					}
 				}
-				val := stk.Pop()
-				key, ok := stk.Pop().data.(name)
-				if !ok {
-					panic("def of non-name")
-				}
-				dicts[len(dicts)-1][key] = val.data
 				continue
 			case "pop":
 				stk.Pop()
 				continue
 			}
 		}
+		
 		b.unreadToken(tok)
 		obj, err := b.readObject()
 		if err != nil {
