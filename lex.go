@@ -7,6 +7,7 @@
 package pdf
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -21,7 +22,6 @@ import (
 //	string, a PDF string literal
 //	keyword, a PDF keyword
 //	name, a PDF name without the leading slash
-//
 type token interface{}
 
 // A name is a PDF name, without the leading slash.
@@ -189,6 +189,75 @@ func (b *buffer) readToken() token {
 		return b.readKeyword()
 	}
 }
+
+// ----- KITECYBER BEGIN -----
+func (b *buffer) readTokenWithTimeout(ctx context.Context) token {
+	if n := len(b.unread); n > 0 {
+		t := b.unread[n-1]
+		b.unread = b.unread[:n-1]
+		return t
+	}
+
+	// Find first non-space, non-comment byte.
+	c := b.readByte()
+	for {
+		// handle timeout
+		select {
+		case <-ctx.Done():
+			return io.EOF
+		default:
+		}
+
+		if isSpace(c) {
+			if b.eof {
+				return io.EOF
+			}
+			c = b.readByte()
+		} else if c == '%' {
+			for c != '\r' && c != '\n' {
+				c = b.readByte()
+			}
+		} else {
+			break
+		}
+	}
+
+	switch c {
+	case '<':
+		if b.readByte() == '<' {
+			return keyword("<<")
+		}
+		b.unreadByte()
+		return b.readHexString()
+
+	case '(':
+		return b.readLiteralString()
+
+	case '[', ']', '{', '}':
+		return keyword(c)
+
+	case '/':
+		return b.readName()
+
+	case '>':
+		if b.readByte() == '>' {
+			return keyword(">>")
+		}
+		b.unreadByte()
+		fallthrough
+
+	default:
+		if isDelim(c) {
+			// b.errorf("unexpected delimiter %#q", rune(c))
+			return b.errorf("unexpected delimiter %#q", rune(c))
+			// return nil
+		}
+		b.unreadByte()
+		return b.readKeyword()
+	}
+}
+
+// ----- KITECYBER END -----
 
 func (b *buffer) readHexString() token {
 	tmp := b.tmp[:0]
