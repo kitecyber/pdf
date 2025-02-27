@@ -5,8 +5,10 @@
 package pdf
 
 import (
+	"context"
 	"fmt"
 	"io"
+	"time"
 )
 
 // A Stack represents a stack of values.
@@ -50,7 +52,6 @@ func newDict() Value {
 // points to Unicode code points.
 //
 // There is no support for executable blocks, among other limitations.
-//
 func Interpret(strm Value, do func(stk *Stack, op string)) {
 	rd := strm.Reader()
 	b := newBuffer(rd, 0)
@@ -62,7 +63,12 @@ func Interpret(strm Value, do func(stk *Stack, op string)) {
 
 Reading:
 	for {
-		tok := b.readToken()
+		// ----- KITECYBER BEGIN -----
+		// timeout added to break readByte when stuck
+		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+		defer cancel()
+		tok := b.readTokenWithTimeout(ctx)
+		// ----- KITECYBER END -----
 		if tok == io.EOF {
 			break
 		}
